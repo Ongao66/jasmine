@@ -1,61 +1,63 @@
-name: Build for ARM64 Debian12
+name: Build ARM64 AppImage on Ubuntu
 
 on:
   workflow_dispatch:
 
 env:
   RUST_TOOLCHAIN: nightly-2024-12-02
+  FLUTTER_VERSION: '3.7.3'
 
 jobs:
   build_linux_arm64:
     name: Build Linux ARM64
     runs-on: ubuntu-latest
-    container: debian:12
 
     steps:
-      - name: Install Git 2.18+ (required for submodules)
-        run: |
-          apt-get update
-          apt-get install -y software-properties-common
-          add-apt-repository -y ppa:git-core/ppa
-          apt-get update
-          apt-get install -y git
-
       - name: Checkout with submodules
-        uses: actions/checkout@v4  # 使用更新版本的 checkout action
+        uses: actions/checkout@v4
         with:
           submodules: recursive
-          fetch-depth: 0
 
       - name: Install system dependencies
         run: |
-          apt-get update
-          apt-get install -y \
+          sudo apt-get update
+          sudo apt-get install -y \
             build-essential \
             curl \
+            file \
+            git \
             libfuse2 \
             libgl1-mesa-dev \
             libgtk-3-dev \
             liblzma-dev \
             ninja-build \
-            xorg-dev \
+            pkg-config \
+            unzip \
+            xz-utils \
+            zip \
             clang \
             cmake \
-            pkg-config \
             libssl-dev
 
       - name: Setup Rust toolchain
-        run: |
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
-            --default-toolchain ${{ env.RUST_TOOLCHAIN }} \
-            --target aarch64-unknown-linux-gnu
-          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          target: aarch64-unknown-linux-gnu
+          override: true
 
       - name: Install AppImage tools
         run: |
-          curl -JOL https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-aarch64.AppImage
-          chmod a+x appimagetool-aarch64.AppImage
-          mv appimagetool-aarch64.AppImage appimagetool
+          curl -LO https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-aarch64.AppImage
+          chmod +x appimagetool-aarch64.AppImage
+          sudo mv appimagetool-aarch64.AppImage /usr/local/bin/appimagetool
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          architecture: arm64
 
       - name: Build Rust library
         run: |
@@ -65,13 +67,6 @@ jobs:
           cbindgen src/lib.rs -l c++ > ../../linux/rust.h
           cd ../..
 
-      - name: Setup Flutter ARM64
-        run: |
-          # 下载并配置 Flutter for ARM64
-          cd $HOME
-          git clone https://github.com/flutter/flutter.git -b stable --depth 1
-          echo "$HOME/flutter/bin" >> $GITHUB_PATH
-
       - name: Build Flutter application
         run: |
           flutter config --enable-linux-desktop
@@ -80,13 +75,16 @@ jobs:
           
           # 准备 AppImage
           mv build/linux/arm64/release/bundle/jasmine build/linux/arm64/release/bundle/AppRun
+          chmod +x build/linux/arm64/release/bundle/AppRun
           cp linux/appimage/* build/linux/arm64/release/bundle/
-          ./appimagetool build/linux/arm64/release/bundle/
-          mv *.AppImage build/linux-arm64.AppImage
+          
+          # 创建 AppImage
+          appimagetool build/linux/arm64/release/bundle/
+          mv Jasmine*.AppImage jasmine-arm64.AppImage
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: jasmine-arm64.AppImage
-          path: build/linux-arm64.AppImage
+          path: jasmine-arm64.AppImage
           retention-days: 3
