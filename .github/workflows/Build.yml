@@ -13,10 +13,19 @@ jobs:
     container: debian:12
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v3
+      - name: Install Git 2.18+ (required for submodules)
+        run: |
+          apt-get update
+          apt-get install -y software-properties-common
+          add-apt-repository -y ppa:git-core/ppa
+          apt-get update
+          apt-get install -y git
+
+      - name: Checkout with submodules
+        uses: actions/checkout@v4  # 使用更新版本的 checkout action
         with:
-          submodules: recursive  # 确保包含子模块
+          submodules: recursive
+          fetch-depth: 0
 
       - name: Install system dependencies
         run: |
@@ -24,21 +33,23 @@ jobs:
           apt-get install -y \
             build-essential \
             curl \
-            git \
             libfuse2 \
             libgl1-mesa-dev \
             libgtk-3-dev \
             liblzma-dev \
             ninja-build \
-            xorg-dev
+            xorg-dev \
+            clang \
+            cmake \
+            pkg-config \
+            libssl-dev
 
       - name: Setup Rust toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: ${{ env.RUST_TOOLCHAIN }}
-          target: aarch64-unknown-linux-gnu
-          profile: minimal
-          override: true
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
+            --default-toolchain ${{ env.RUST_TOOLCHAIN }} \
+            --target aarch64-unknown-linux-gnu
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
       - name: Install AppImage tools
         run: |
@@ -48,24 +59,27 @@ jobs:
 
       - name: Build Rust library
         run: |
-          cd native/jmbackend/platforms/linux
+          cd native/jmbackend
           cargo build --release --target=aarch64-unknown-linux-gnu
-          cp target/aarch64-unknown-linux-gnu/release/librust.a ../../../../linux/
-          cbindgen src/lib.rs -l c++ > ../../../../linux/rust.h
-          cd ../../../..
+          cp target/aarch64-unknown-linux-gnu/release/librust.a ../../linux/
+          cbindgen src/lib.rs -l c++ > ../../linux/rust.h
+          cd ../..
 
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          flutter-version: '3.7.3'
-          architecture: arm64
+      - name: Setup Flutter ARM64
+        run: |
+          # 下载并配置 Flutter for ARM64
+          cd $HOME
+          git clone https://github.com/flutter/flutter.git -b stable --depth 1
+          echo "$HOME/flutter/bin" >> $GITHUB_PATH
 
       - name: Build Flutter application
         run: |
           flutter config --enable-linux-desktop
+          flutter pub get
           flutter build linux --release --target-platform linux-arm64
-          mv build/linux/arm64/release/bundle/{jasmine,AppRun}
+          
+          # 准备 AppImage
+          mv build/linux/arm64/release/bundle/jasmine build/linux/arm64/release/bundle/AppRun
           cp linux/appimage/* build/linux/arm64/release/bundle/
           ./appimagetool build/linux/arm64/release/bundle/
           mv *.AppImage build/linux-arm64.AppImage
