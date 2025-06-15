@@ -15,6 +15,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v3
+        with:
+          submodules: recursive  # 确保包含子模块
 
       - name: Install system dependencies
         run: |
@@ -46,9 +48,18 @@ jobs:
 
       - name: Build Rust library
         run: |
+          cd native/jmbackend/platforms/linux
           cargo build --release --target=aarch64-unknown-linux-gnu
-          cp target/aarch64-unknown-linux-gnu/release/librust.a linux/
-          cbindgen src/lib.rs -l c++ > linux/rust.h
+          cp target/aarch64-unknown-linux-gnu/release/librust.a ../../../../linux/
+          cbindgen src/lib.rs -l c++ > ../../../../linux/rust.h
+          cd ../../../..
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.7.3'
+          architecture: arm64
 
       - name: Build Flutter application
         run: |
@@ -63,4 +74,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: jasmine-arm64.AppImage
-          path: build/linux-arm64
+          path: build/linux-arm64.AppImage
+          retention-days: 3
