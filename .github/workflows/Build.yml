@@ -1,16 +1,16 @@
-name: Build ARM64 AppImage on Ubuntu
+name: Build ARM64 AppImage on ARM64 Ubuntu
 
 on:
   workflow_dispatch:
 
 env:
   RUST_TOOLCHAIN: nightly-2024-12-02
-  FLUTTER_VERSION: '3.7.3'
+  FLUTTER_VERSION: '3.13.0'  # 使用更新的 Flutter 版本确保 ARM64 支持
 
 jobs:
   build_linux_arm64:
     name: Build Linux ARM64
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04-arm64  # 使用 ARM64 架构的 runner
 
     steps:
       - name: Checkout with submodules
@@ -40,11 +40,12 @@ jobs:
             libssl-dev
 
       - name: Setup Rust toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: ${{ env.RUST_TOOLCHAIN }}
-          target: aarch64-unknown-linux-gnu
-          override: true
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
+            --default-toolchain ${{ env.RUST_TOOLCHAIN }} \
+            --target aarch64-unknown-linux-gnu
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+          source $HOME/.cargo/env
 
       - name: Install AppImage tools
         run: |
@@ -52,33 +53,31 @@ jobs:
           chmod +x appimagetool-aarch64.AppImage
           sudo mv appimagetool-aarch64.AppImage /usr/local/bin/appimagetool
 
-      - name: Install Flutter ARM64 manually
+      - name: Install Flutter ARM64
         run: |
-          # 下载官方 Flutter SDK
-          wget https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_${FLUTTER_VERSION}-stable.tar.xz
-          tar xf flutter_linux_${FLUTTER_VERSION}-stable.tar.xz
+          # 克隆 Flutter 仓库（ARM64 兼容）
+          git clone https://github.com/flutter/flutter.git -b stable --depth 1
           echo "${GITHUB_WORKSPACE}/flutter/bin" >> $GITHUB_PATH
           
           # 配置 Flutter
           flutter config --no-analytics
           flutter precache
-          flutter doctor
+          flutter doctor -v
 
       - name: Build Rust library
         run: |
           cd native/jmbackend
-          cargo build --release --target=aarch64-unknown-linux-gnu
-          cp target/aarch64-unknown-linux-gnu/release/librust.a ../../linux/
+          cargo build --release
+          cp target/release/librust.a ../../linux/
           cbindgen src/lib.rs -l c++ > ../../linux/rust.h
           cd ../..
 
       - name: Build Flutter application
         run: |
           flutter config --enable-linux-desktop
+          flutter clean
           flutter pub get
-          
-          # 显式指定目标平台
-          flutter build linux --release --target-platform linux-arm64
+          flutter build linux --release
           
           # 准备 AppImage
           mv build/linux/arm64/release/bundle/jasmine build/linux/arm64/release/bundle/AppRun
