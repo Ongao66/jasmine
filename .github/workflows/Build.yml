@@ -52,12 +52,17 @@ jobs:
           chmod +x appimagetool-aarch64.AppImage
           sudo mv appimagetool-aarch64.AppImage /usr/local/bin/appimagetool
 
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          architecture: arm64
+      - name: Install Flutter ARM64 manually
+        run: |
+          # 下载官方 Flutter SDK
+          wget https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_${FLUTTER_VERSION}-stable.tar.xz
+          tar xf flutter_linux_${FLUTTER_VERSION}-stable.tar.xz
+          echo "${GITHUB_WORKSPACE}/flutter/bin" >> $GITHUB_PATH
+          
+          # 配置 Flutter
+          flutter config --no-analytics
+          flutter precache
+          flutter doctor
 
       - name: Build Rust library
         run: |
@@ -71,6 +76,8 @@ jobs:
         run: |
           flutter config --enable-linux-desktop
           flutter pub get
+          
+          # 显式指定目标平台
           flutter build linux --release --target-platform linux-arm64
           
           # 准备 AppImage
